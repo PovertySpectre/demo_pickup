@@ -7,9 +7,11 @@ SWEP.ViewModelFOV = GetConVar("viewmodel_fov")
 
 SWEP.Weight = 4
 
+SWEP.DrawAmmo = false
+
 SWEP.Primary.Ammo = "portalgun"
 SWEP.Primary.ClipSize = 1
-SWEP.Primary.DefaultClip = 0
+SWEP.Primary.DefaultClip = 1
 SWEP.Primary.Automatic = true
 
 SWEP.Secondary.Ammo = "none"
@@ -17,8 +19,18 @@ SWEP.Secondary.ClipSize = -1
 SWEP.Secondary.DefaultClip = -1
 SWEP.Secondary.Automatic = true
 
+game.AddAmmoType({
+	dmgtype = DMG_DISSOLVE,
+	name = "portalgun",
+	npcdmg = 9,
+	plydmg = 9,
+	maxcarry = 2,
+	flags = 2
+})
+
 game.AddParticles("particles/portalgun.pcf")
 
+-- ignore these in case you already have the soundscripts
 sound.Add({
 	sound = "player/object_use_stop_01.wav",
 	name = "PortalPlayer.ObjectUseStop",
@@ -39,6 +51,7 @@ function SWEP:SetupDataTables()
 
 	self:NetworkVar("Bool", 1, "CarryingObject")
 	self:NetworkVar("Bool", 0, "FirstDeploy")
+	self:NetworkVar("Float", 0, "NextIdle")
 
 	if SERVER then
 		self:SetFirstDeploy(true)
@@ -57,6 +70,10 @@ function SWEP:Initialize()
 end
 
 local sv_defaultdeployspeed = GetConVar("sv_defaultdeployspeed")
+
+function SWEP:EquipAmmo(ply)
+	ply:SetAmmo(0, self:GetPrimaryAmmoType())
+end
 
 function SWEP:Deploy()
 
@@ -80,8 +97,8 @@ function SWEP:Deploy()
 						vm1:SetPlaybackRate(sv_defaultdeployspeed:GetFloat())
 						self:SetFirstDeploy(false)
 					end
+					self:SetNextIdle(CurTime() + vm1:SequenceDuration() / vm1:GetPlaybackRate())
 				end
-				
 			end
 		end
 	end
@@ -131,4 +148,24 @@ end
 
 function SWEP:OnRemove()
 	timer.Remove(self:GetClass() .. "_" .. self:EntIndex())
+end
+
+function SWEP:Think()
+	if SERVER then
+		local owner = self:GetOwner()
+		if owner:KeyPressed(IN_USE) then
+			local vm1 = owner:GetViewModel(1)
+			if vm1:IsValid() then
+				vm1:SendViewModelMatchingSequence(vm1:SelectWeightedSequence(ACT_VM_DRYFIRE))
+				self:SetNextIdle(CurTime() + vm1:SequenceDuration())
+			end
+		end
+		if self:GetNextIdle() > 0 and CurTime() >= self:GetNextIdle() then
+			local vm1 = owner:GetViewModel(1)
+			if vm1:IsValid() then
+				vm1:SendViewModelMatchingSequence(vm1:SelectWeightedSequence(ACT_VM_IDLE))
+				self:SetNextIdle(CurTime() + vm1:SequenceDuration())
+			end
+		end
+	end
 end
